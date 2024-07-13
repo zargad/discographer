@@ -5,4 +5,4 @@ edition = "2021"
 
 [dependencies]
 chrono = "0.4.38"
-thirtyfour = "0.32.0"
+fantoccini = "0.19.3"
