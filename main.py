@@ -13,7 +13,7 @@ def main():
     print_releases(artist.name, releases)
 
 
-def print_releases(artist_name, releases):
+def print_releases(artist, releases):
     months = [
         'Jan',
         'Feb',
@@ -28,15 +28,29 @@ def print_releases(artist_name, releases):
         'Nov',
         'Dec',
     ]
-    print('#', artist_name)
+    print('#', artist.name)
+    print()
+    print('##', f'[Discography]({artist.url})')
     year = None
     for (title, date) in releases:
         if year != date.year:
             year = date.year
             print()
-            print('##', year)
+            print('###', year)
             print()
-        print(title, '-', months[date.month - 1], date.day)
+        title = escape_markdown(title)
+        date = format_date(date)
+        print(title, '-', date)
+
+
+def escape_markdown(text):
+    for c in ('\\', '[', '*', '_', '^', '#', ''):
+        text = text.replace(c, '\\' + c)
+    return text
+
+
+def format_date(date):
+    return f'*{months[date[1]} {date[2]}*'
 
 
 def get_releases(client, artist):
