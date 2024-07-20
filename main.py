@@ -21,7 +21,7 @@ def main():
     except discogs_api.exceptions.HTTPError:
         print('Unkown artist!')
         return
-    releases = get_releases(client, artist, bool(user_token))
+    releases = get_releases_details(client, artist, bool(user_token))
     releases.sort(key=lambda r: r[1])
     print_releases(artist.name, releases)
 
@@ -66,23 +66,52 @@ def format_date(date):
     return f'*{months[date[1]]} {date[2]}*'
 
 
-def get_releases(client, artist, has_user_token):
+def get_releases_details(client, artist, has_user_token):
     delay = 3 if has_user_token else 10
     releases = []
+    releases_count = len(artist.releases)
+    failed_releases = []
     for i, release in enumerate(artist.releases, start=1):
-        print(i, '/', len(artist.releases))
-        if isinstance(release, discogs_api.Master):
-            release = client.release(release.versions[0].id)
-        title = release.title
-        print(release.released)
-        date = get_date(release.released)
-        releases.append((title, date))
-        sleep(delay)
+        print(i, '/', releases_count)
+        try:
+            details = get_release_details(client, release)
+            releases_details.append(details)
+        except discogs.exceptions.HTTPError:
+            failed_releases.append(release)
+            print('Rate Limited: FAILED GETTING', len(failed_releases) 'RELEASES DETAILS')
+    while failed_releases:
+        print(len(failed_releases), 'FAILED RELEASES')
+        failed_releases_buffer = []
+        for i, release in enumerate(artist.releases, start=1):
+            print(i, '/', releases_count)
+            try:
+                details = get_release_details(client, release)
+                releases_details.append(details)
+            except discogs.exceptions.HTTPError:
+                failed_releases_buffer.append(release)
+                print('Rate Limited: FAILED GETTING', len(failed_releases) 'RELEASES DETAILS')
+        failed_releases = failed_releases_buffer[:]
     return releases
 
 
+def get_release_details(client, release):
+    if isinstance(release, discogs_api.Master):
+        oldest_release = release.versions[0]
+        sleep(delay)
+        release_id = oldest_release.id
+        sleep(delay)
+        release = client.release(release_id)
+        sleep(delay)
+    title = release.title
+    sleep(delay)
+    date = get_date(release.released)
+    sleep(delay)
+    return (title, date)
+
+
 def get_date(raw_date):
-    date = list(map(int, raw_date.split('-')))
+    date = '0' if raw_date is None else raw_date
+    date = list(map(int, date.split('-')))
     date += [0] * (3 - len(date))
     date = map(lambda n: 1 if n == 0 else n, date)
     date = datetime(*date)
