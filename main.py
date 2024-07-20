@@ -2,6 +2,7 @@
 """Print out a discography of an artist."""
 from datetime import datetime
 from time import sleep
+from json.decoder import JSONDecodeError
 import discogs_api
 
 
@@ -11,14 +12,14 @@ def main():
     if user_token:
         try:
             print('Hello', client.identity().username + '!')
-        except discogs_api.exceptions.HTTPError:
+        except (discogs_api.exceptions.HTTPError, JSONDecodeError):
             print('Unknown user id!')
             return
     artist_id = input('artist id: ').strip()
     try:
         artist = client.artist(artist_id)
         print('Artist:', artist.name)
-    except discogs_api.exceptions.HTTPError:
+    except (discogs_api.exceptions.HTTPError, JSONDecodeError):
         print('Unkown artist!')
         return
     releases = get_releases_details(client, artist, bool(user_token))
@@ -68,33 +69,33 @@ def format_date(date):
 
 def get_releases_details(client, artist, has_user_token):
     delay = 3 if has_user_token else 10
-    releases = []
+    releases_details = []
     releases_count = len(artist.releases)
     failed_releases = []
     for i, release in enumerate(artist.releases, start=1):
         print(i, '/', releases_count)
         try:
-            details = get_release_details(client, release)
+            details = get_release_details(client, release, delay)
             releases_details.append(details)
-        except discogs.exceptions.HTTPError:
+        except (discogs_api.exceptions.HTTPError, JSONDecodeError):
             failed_releases.append(release)
-            print('Rate Limited: FAILED GETTING', len(failed_releases) 'RELEASES DETAILS')
+            print('RATE LIMITED: FAILED GETTING', len(failed_releases), 'RELEASES DETAILS')
     while failed_releases:
         print(len(failed_releases), 'FAILED RELEASES')
         failed_releases_buffer = []
-        for i, release in enumerate(artist.releases, start=1):
-            print(i, '/', releases_count)
+        for i, release in enumerate(failed_releases, start=1):
+            print(i, '/', len(failed_releases))
             try:
-                details = get_release_details(client, release)
+                details = get_release_details(client, release, delay)
                 releases_details.append(details)
-            except discogs.exceptions.HTTPError:
+            except (discogs_api.exceptions.HTTPError, JSONDecodeError):
                 failed_releases_buffer.append(release)
-                print('Rate Limited: FAILED GETTING', len(failed_releases) 'RELEASES DETAILS')
+                print('RATE LIMITED: FAILED GETTING', len(failed_releases), 'RELEASES DETAILS')
         failed_releases = failed_releases_buffer[:]
-    return releases
+    return releases_details
 
 
-def get_release_details(client, release):
+def get_release_details(client, release, delay):
     if isinstance(release, discogs_api.Master):
         oldest_release = release.versions[0]
         sleep(delay)
