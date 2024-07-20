@@ -6,9 +6,22 @@ import discogs_api
 
 
 def main():
-    client = discogs_api.Client('ExampleApplication/1.0')
-    artist = client.artist(input('artist id: '))
-    releases = get_releases(client, artist)
+    user_token = input('user token (optional): ').strip()
+    client = discogs_api.Client('ExampleApplication/1.0', user_token=user_token)
+    if user_token:
+        try:
+            print('Hello', client.identity().username + '!')
+        except discogs_api.exceptions.HTTPError:
+            print('Unknown user id!')
+            return
+    artist_id = input('artist id: ').strip()
+    try:
+        artist = client.artist(artist_id)
+        print('Artist:', artist.name)
+    except discogs_api.exceptions.HTTPError:
+        print('Unkown artist!')
+        return
+    releases = get_releases(client, artist, bool(user_token))
     releases.sort(key=lambda r: r[1])
     print_releases(artist.name, releases)
 
@@ -50,10 +63,11 @@ def escape_markdown(text):
 
 
 def format_date(date):
-    return f'*{months[date[1]} {date[2]}*'
+    return f'*{months[date[1]]} {date[2]}*'
 
 
-def get_releases(client, artist):
+def get_releases(client, artist, has_user_token):
+    delay = 3 if has_user_token else 10
     releases = []
     for i, release in enumerate(artist.releases, start=1):
         print(i, '/', len(artist.releases))
@@ -63,7 +77,7 @@ def get_releases(client, artist):
         print(release.released)
         date = get_date(release.released)
         releases.append((title, date))
-        sleep(10)
+        sleep(delay)
     return releases
 
 
