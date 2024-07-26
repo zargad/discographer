@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Print out a discography of an artist."""
+import sys
 from datetime import datetime
 from time import sleep
 from json.decoder import JSONDecodeError
@@ -12,18 +13,18 @@ def main():
     if user_token:
         safe_get_request = SafeGetRequest(.15, 20)
         try:
-            print('Hello', client.identity().username + '!')
+            eprint('Hello', client.identity().username + '!')
         except (discogs_api.exceptions.HTTPError, JSONDecodeError):
-            print('Unknown user id!')
+            eprint('Unknown user id!')
             return
     else:
         safe_get_request = SafeGetRequest(1.5, 200)
     artist_id = input('artist id: ').strip()
     try:
         artist = client.artist(artist_id)
-        print('Artist:', artist.name)
+        eprint('Artist:', artist.name)
     except (discogs_api.exceptions.HTTPError, JSONDecodeError):
-        print('Unkown artist!')
+        eprint('Unkown artist!')
         return
     releases = get_releases_details(client, artist, safe_get_request)
     releases.sort(key=lambda r: r[1])
@@ -64,19 +65,19 @@ class SafeGetRequest:
             self.delay = self.delay * ratio + self.min_delay * (1 - ratio)
         else:
             self.delay = self.max_delay * ratio + self.delay * (1 - ratio)
-        print(self.delay)
+        eprint(self.delay)
 
     def __call__(self, tries, request_function):
         for i in range(tries):
-            print('try:', i, '/', tries)
+            eprint('try:', i, '/', tries)
             sleep(self.delay)
             try:
                 result = request_function()
-                print('SUCCESS')
+                eprint('SUCCESS')
                 self.update_delay(True)
                 return result
             except (discogs_api.exceptions.HTTPError, JSONDecodeError):
-                print('FAIL')
+                eprint('FAIL')
                 self.update_delay(False)
         raise discogs_api.exceptions.HTTPError
 
@@ -118,9 +119,10 @@ def get_releases_details(client, artist, safe_get_request):
         except StopIteration:
             break
         i, release = entry
-        print(i, '/', releases_count)
+        eprint(i, '/', releases_count)
         details = get_release_details(client, release, safe_get_request)
         releases_details.append(details)
+        eprint(*details)
     return releases_details
 
 
@@ -142,6 +144,10 @@ def get_date(raw_date):
     date = map(lambda n: 1 if n == 0 else n, date)
     date = datetime(*date)
     return date
+
+
+def eprint(*args, **kwargs):
+    print(*args, file=sys.stderr, **kwargs)
 
 
 if __name__ == '__main__':
