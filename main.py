@@ -10,11 +10,14 @@ def main():
     user_token = input('user token (optional): ').strip()
     client = discogs_api.Client('ExampleApplication/1.0', user_token=user_token)
     if user_token:
+        safe_get_request = SafeGetRequest(.15, 20)
         try:
             print('Hello', client.identity().username + '!')
         except (discogs_api.exceptions.HTTPError, JSONDecodeError):
             print('Unknown user id!')
             return
+    else:
+        safe_get_request = SafeGetRequest(1.5, 200)
     artist_id = input('artist id: ').strip()
     try:
         artist = client.artist(artist_id)
@@ -22,29 +25,19 @@ def main():
     except (discogs_api.exceptions.HTTPError, JSONDecodeError):
         print('Unkown artist!')
         return
-    releases = get_releases_details(client, artist, bool(user_token))
+    releases = get_releases_details(client, artist, safe_get_request)
     releases.sort(key=lambda r: r[1])
-    print_releases(artist.name, releases)
+    print_releases(artist, releases, safe_get_request)
 
 
-def print_releases(artist, releases):
-    months = [
-        'Jan',
-        'Feb',
-        'Mar',
-        'Apr',
-        'May',
-        'Jun',
-        'Jul',
-        'Aug',
-        'Sep',
-        'Oct',
-        'Nov',
-        'Dec',
-    ]
-    print('#', artist.name)
+def print_releases(artist, releases, safe_get_request):
+    """Print a markdown document from the release details."""
+
+    name = safe_get_request(1000, lambda: artist.name)
+    print('#', name)
     print()
-    print('##', f'[Discography]({artist.url})')
+    url = safe_get_request(1000, lambda: artist.url)
+    print('##', f'[Discography]({url})')
     year = None
     for (title, date) in releases:
         if year != date.year:
@@ -57,56 +50,88 @@ def print_releases(artist, releases):
         print(title, '-', date)
 
 
+class SafeGetRequest:
+    """Run the same request multiple times and adjust to rate limits."""
+
+    def __init__(self, min_delay, max_delay):
+        self.min_delay = min_delay
+        self.max_delay = max_delay
+        self.delay = (min_delay + max_delay) / 2
+
+    def update_delay(self, success):
+        ratio = 8/9
+        if success:
+            self.delay = self.delay * ratio + self.min_delay * (1 - ratio)
+        else:
+            self.delay = self.max_delay * ratio + self.delay * (1 - ratio)
+        print(self.delay)
+
+    def __call__(self, tries, request_function):
+        for i in range(tries):
+            print('try:', i, '/', tries)
+            sleep(self.delay)
+            try:
+                result = request_function()
+                print('SUCCESS')
+                self.update_delay(True)
+                return result
+            except (discogs_api.exceptions.HTTPError, JSONDecodeError):
+                print('FAIL')
+                self.update_delay(False)
+        raise discogs_api.exceptions.HTTPError
+
+
+
 def escape_markdown(text):
-    for c in ('\\', '[', '*', '_', '^', '#', ''):
+    for c in ('\\', '[', '*', '_', '^', '#'):
         text = text.replace(c, '\\' + c)
     return text
 
 
 def format_date(date):
-    return f'*{months[date[1]]} {date[2]}*'
+    months = (
+        'Jan',
+        'Feb',
+        'Mar',
+        'Apr',
+        'May',
+        'Jun',
+        'Jul',
+        'Aug',
+        'Sep',
+        'Oct',
+        'Nov',
+        'Dec',
+    )
+    return f'*{months[date.month - 1]} {date.day}*'
 
 
-def get_releases_details(client, artist, has_user_token):
-    delay = 3 if has_user_token else 10
+def get_releases_details(client, artist, safe_get_request):
+    """Get the title and dates of all releases from an artist."""
+
     releases_details = []
-    releases_count = len(artist.releases)
-    failed_releases = []
-    for i, release in enumerate(artist.releases, start=1):
-        print(i, '/', releases_count)
+    releases_count = safe_get_request(1000, lambda: len(artist.releases))
+    iterator = safe_get_request(1000, lambda: enumerate(artist.releases, start=1))
+    while True:
         try:
-            details = get_release_details(client, release, delay)
-            releases_details.append(details)
-        except (discogs_api.exceptions.HTTPError, JSONDecodeError):
-            failed_releases.append(release)
-            print('RATE LIMITED: FAILED GETTING', len(failed_releases), 'RELEASES DETAILS')
-    while failed_releases:
-        print(len(failed_releases), 'FAILED RELEASES')
-        failed_releases_buffer = []
-        for i, release in enumerate(failed_releases, start=1):
-            print(i, '/', len(failed_releases))
-            try:
-                details = get_release_details(client, release, delay)
-                releases_details.append(details)
-            except (discogs_api.exceptions.HTTPError, JSONDecodeError):
-                failed_releases_buffer.append(release)
-                print('RATE LIMITED: FAILED GETTING', len(failed_releases), 'RELEASES DETAILS')
-        failed_releases = failed_releases_buffer[:]
+            entry = safe_get_request(1000, lambda: next(iterator))
+        except StopIteration:
+            break
+        i, release = entry
+        print(i, '/', releases_count)
+        details = get_release_details(client, release, safe_get_request)
+        releases_details.append(details)
     return releases_details
 
 
-def get_release_details(client, release, delay):
+def get_release_details(client, release, safe_get_request):
     if isinstance(release, discogs_api.Master):
-        oldest_release = release.versions[0]
-        sleep(delay)
-        release_id = oldest_release.id
-        sleep(delay)
-        release = client.release(release_id)
-        sleep(delay)
-    title = release.title
-    sleep(delay)
-    date = get_date(release.released)
-    sleep(delay)
+        oldest_release = safe_get_request(1000, lambda: release.versions[0])
+        release_id = safe_get_request(1000, lambda: oldest_release.id)
+        release = safe_get_request(1000, lambda: client.release(release_id))
+    title = safe_get_request(1000, lambda: release.title)
+    released = safe_get_request(1000, lambda: release.released)
+    date = get_date(released)
     return (title, date)
 
 
